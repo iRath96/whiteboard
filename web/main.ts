@@ -417,6 +417,8 @@ class Application {
       change: (force: number) => {
         this.pressure = force;
       }
+    }, {
+      polyfill: false
     });
 
     const isActive = () =>
