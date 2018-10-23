@@ -1,6 +1,6 @@
 const style = require('./main.css');
 
-import { Point, Interpolator, Smoothener, vec2, Vec2, Bounds2, bounds2 } from '../core/Interpolator';
+import { Point, Interpolator, Reducer, vec2, Vec2, Bounds2, bounds2, Smoothener } from '../core/Interpolator';
 import * as dat from 'dat.gui';
 import * as io from 'socket.io-client';
 
@@ -14,6 +14,14 @@ interface CompressedStroke {
 interface Stroke {
   color: string;
   points: Point[];
+}
+
+function compressPoint(point: Point) {
+  return {
+    time: point.time,
+    pressure: Math.floor(point.pressure * 8) / 8,
+    position: Vec2.floor(point.position)
+  }
 }
 
 function inflateStroke(stroke: CompressedStroke): Stroke {
@@ -38,9 +46,9 @@ function inflateStroke(stroke: CompressedStroke): Stroke {
 function deflateStroke(stroke: Stroke): CompressedStroke {
   const data = new Array(stroke.points.length * 3);
   stroke.points.forEach((point, i) => {
-    data[i*3+0] = Math.floor(point.pressure * 8);
-    data[i*3+1] = Math.floor(point.position[0]);
-    data[i*3+2] = Math.floor(point.position[1]);
+    data[i*3+0] = point.pressure * 8;
+    data[i*3+1] = point.position[0];
+    data[i*3+2] = point.position[1];
   });
 
   return {
@@ -112,7 +120,7 @@ class Layer {
     let lastPoint = previous ? previous : points[0];
     points.forEach(point => {
       this.ctx.beginPath();
-      this.ctx.lineWidth = lastPoint.pressure;
+      this.ctx.lineWidth = Math.max(point.pressure, 1);
       this.ctx.strokeStyle = color;
       this.ctx.lineCap = 'round';
 
@@ -164,8 +172,9 @@ class Intermediate {
 
   lastPoint: Point;
 
-  sampler = new Smoothener();
-  interpolator = new Interpolator();
+  reducer: Reducer;
+  smoothener: Smoothener;
+  interpolator: Interpolator;
 
   layer = new Layer(style.intermediate);
 
@@ -316,6 +325,9 @@ class TileManager {
   }
 }
 
+type PressureMode = 'none' | 'default' | 'simulate';
+type SmoothingMode = 'off' | 'gentle' | 'strong';
+
 class Application {
   tiles: TileManager;
   intercept = document.createElement('div');
@@ -326,9 +338,11 @@ class Application {
   socket = io.connect();
   
   options = {
-    pressure: 1,
-    smoothing: 4,
+    size: 4,
     color: '#000000',
+
+    pressureMode: 'default' as PressureMode,
+    smoothingMode: 'gentle' as SmoothingMode,
 
     scrollX: 0,
     scrollY: 0
@@ -376,8 +390,9 @@ class Application {
     };
 
     const stroke = this.gui.addFolder('stroke');
-    stroke.add(this.options, 'pressure', 1, 100);
-    stroke.add(this.options, 'smoothing', 3, 50);
+    stroke.add(this.options, 'pressureMode', [ 'none', 'default', 'simulate' ]).name('pressure');
+    stroke.add(this.options, 'smoothingMode', [ 'off', 'gentle', 'strong' ]).name('smoothing');
+    stroke.add(this.options, 'size', 1, 100);
     stroke.addColor(this.options, 'color');
     stroke.open();
 
@@ -402,7 +417,6 @@ class Application {
     });
 
     this.socket.on('strokes', (tileId: TileId, strokes: CompressedStroke[]) => {
-      console.log(tileId, strokes.length);
       strokes.forEach(stroke =>
         this.tiles.drawStroke(tileId, inflateStroke(stroke))
       );
@@ -429,28 +443,55 @@ class Application {
       this.intermediates.get(this.intermediateId)!
     ;
 
-    const addPoint = (e: MouseEvent) => {
+    let lastPosition: vec2;
+
+    const addPoint = (e: MouseEvent, first = false) => {
+      const position: vec2 = [
+        e.clientX,
+        e.clientY
+      ];
+
+      if (first)
+        lastPosition = position;
+
+      let pressure: number;
+      switch (this.options.pressureMode) {
+        case 'none': pressure = 1.0; break;
+        case 'default': pressure = this.pressure; break;
+        case 'simulate': {
+          const speed = Vec2.distance(position, lastPosition);
+          lastPosition = position;
+
+          pressure = speed / (speed + 20);
+          break;
+        }
+      }
+
       const point: Point = {
         time: (new Date().getTime() - intermediate().startTime.getTime()) / 1000,
-        pressure: this.pressure * this.options.pressure,
-        position: [
-          e.clientX,
-          e.clientY
-        ]
+        pressure: pressure * this.options.size,
+        position
       };
+      
+      const smoothened = intermediate().smoothener.pipe(point);
+      const reduced = intermediate().reducer.pipeMultiple(smoothened).map(compressPoint)
 
-      const sampled = intermediate().sampler.pipe(point);
-
-      intermediate().stroke.points = [ ...intermediate().stroke.points, ...sampled ];
-      intermediate().drawPoints(intermediate().interpolator.pipeMultiple(sampled));
+      intermediate().stroke.points = [ ...intermediate().stroke.points, ...reduced ];
+      intermediate().drawPoints(intermediate().interpolator.pipeMultiple(reduced));
     };
 
     const flush = () => {
       if (!isActive())
         return;
       
-      intermediate().interpolator.pipeMultiple(intermediate().sampler.flush());
-      intermediate().drawPoints(intermediate().interpolator.flush());
+      intermediate().drawPoints(
+        // @todo this is pretty ugly.
+        intermediate().interpolator.process(
+          intermediate().reducer.process(
+            intermediate().smoothener.flush()
+          )
+        )
+      );
 
       const tiles: vec2[] = [];
       const bounds = Bounds2.floor(
@@ -490,14 +531,40 @@ class Application {
       int.startTime = new Date();
       int.stroke.color = this.options.color;
 
+      int.smoothener = new Smoothener();
+      int.reducer = new Reducer();
+
+      switch (this.options.smoothingMode) {
+        case 'off': {
+          int.smoothener.position = 1.0;
+          int.smoothener.pressure = 0.7;
+          int.reducer.d = 3;
+
+          break;
+        }
+
+        case 'gentle': {
+          int.smoothener.position = 0.7;
+          int.smoothener.pressure = 0.35;
+          int.reducer.d = 5;
+          
+          break;
+        }
+
+        case 'strong': {
+          int.smoothener.position = 0.3;
+          int.smoothener.pressure = 0.25;
+          int.reducer.d = 8;
+          
+          break;
+        }
+      }
+
       int.interpolator = new Interpolator();
       int.interpolator.c = 0.0;
       int.interpolator.quality = 2;
 
-      int.sampler = new Smoothener();
-      int.sampler.d = this.options.smoothing;
-
-      addPoint(e);
+      addPoint(e, true);
     });
 
     this.intercept.addEventListener('mousemove', e => {

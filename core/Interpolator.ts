@@ -10,12 +10,19 @@ export class Vec2 {
   static add(a: vec2, b: vec2): vec2 { return [ a[0] + b[0], a[1] + b[1] ]; }
   static sub(a: vec2, b: vec2): vec2 { return [ a[0] - b[0], a[1] - b[1] ]; }
   static mul(a: vec2, b: vec2): vec2 { return [ a[0] * b[0], a[1] * b[1] ]; }
+  static mulS(a: vec2, s: number): vec2 { return [ a[0] * s, a[1] * s ]; }
   static div(a: vec2, b: vec2): vec2 { return [ a[0] / b[0], a[1] / b[1] ]; }
   static distance(a: vec2, b: vec2) { return hypot(b[0] - a[0], b[1] - a[1]); }
   static floor(a: vec2): vec2 { return [ Math.floor(a[0]), Math.floor(a[1]) ]; }
   static ceil(a: vec2): vec2 { return [ Math.ceil(a[0]), Math.ceil(a[1]) ]; }
   static min(a: vec2, b: vec2): vec2 { return [ Math.min(a[0], b[0]), Math.min(a[1], b[1]) ]; }
   static max(a: vec2, b: vec2): vec2 { return [ Math.max(a[0], b[0]), Math.max(a[1], b[1]) ]; }
+  static mix(a: vec2, b: vec2, t: number): vec2 {
+    return this.add(
+      this.mulS(a, 1 - t),
+      this.mulS(b, t)
+    );
+  }
 }
 
 export class Bounds2 {
@@ -90,6 +97,7 @@ export class Interpolator extends Pipe {
   public c = 0.0;
   public quality = 4.0;
   public bias = 1e-3;
+  public pressureWeight = 10.0;
 
   protected getTangent(i: number, value: Getter<number>) {
     const n = this.points.length;
@@ -148,12 +156,14 @@ export class Interpolator extends Pipe {
 
       result.push(interpolate(interp));
 
-      const speed = hypot(
+      let speed = hypot(
         diff2(p => p.position[0]),
         diff2(p => p.position[1])
       );
 
-      t += this.quality / (speed + 1e-3) + this.bias;
+      speed += this.pressureWeight * Math.abs(diff2(p => p.pressure));
+
+      t += this.quality / (speed + this.bias) + this.bias;
     }
     
     return result;
@@ -168,9 +178,9 @@ export class Interpolator extends Pipe {
   }
 }
 
-export class Smoothener extends Pipe {
-  public d = 10.0;
-  public hard = true;
+export class Reducer extends Pipe {
+  public d = 3.0;
+  public hard = false;
 
   protected r = 0.0;
 
@@ -206,42 +216,30 @@ export class Smoothener extends Pipe {
   }
 }
 
-export class Sampler extends Pipe {
-  public d = 4.0;
-  protected r = 0.0;
+export class Smoothener extends Pipe {
+  public position = 0.9;
+  public pressure = 0.5;
+
+  protected mean: Point;
+  protected lastPoint: Point;
 
   pipe(point: Point) {
-    this.points.push(point);
-    if (this.points.length === 1)
-      return [];
+    this.lastPoint = point;
+
+    if (!this.mean)
+      this.mean = point;
     
-    const result: Point[] = [];
+    this.mean.pressure = (1 - this.pressure) * this.mean.pressure + this.pressure * point.pressure;
+    this.mean.position = Vec2.mix(this.mean.position,point.position, this.position);
 
-    const left = this.points.length - 2;
-    const right = left + 1;
-
-    const d = Vec2.distance(this.points[left].position, this.points[right].position);
-
-    let u = this.r;
-    for (; u < d; u += this.d) {
-      let t = u / d;
-
-      const interp = (value: Getter<number>) => {
-        const p0 = value(this.points[left]);
-        const p1 = value(this.points[right]);
-
-        return (1 - t) * p0 + t * p1;
-      };
-
-      result.push(interpolate(interp));
-    }
-
-    this.r = u - d;
-
-    return result;
+    return [{
+      time: point.time,
+      pressure: this.mean.pressure,
+      position: this.mean.position
+    }];
   }
 
   flush() {
-    return [];
+    return this.lastPoint ? [ this.lastPoint ] : [];
   }
 }
