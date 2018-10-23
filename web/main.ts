@@ -6,9 +6,47 @@ import * as io from 'socket.io-client';
 
 const Pressure = require('pressure');
 
+interface CompressedStroke {
+  color: string;
+  data: number[];
+}
+
 interface Stroke {
   color: string;
   points: Point[];
+}
+
+function inflateStroke(stroke: CompressedStroke): Stroke {
+  const points: Point[] = [];
+  for (let i = 0; i < stroke.data.length; i += 3) {
+    points.push({
+      time: 0,
+      pressure: stroke.data[i+0] / 8,
+      position: [
+        stroke.data[i+1],
+        stroke.data[i+2]
+      ]
+    });
+  }
+
+  return {
+    color: stroke.color,
+    points
+  };
+}
+
+function deflateStroke(stroke: Stroke): CompressedStroke {
+  const data = new Array(stroke.points.length * 3);
+  stroke.points.forEach((point, i) => {
+    data[i*3+0] = Math.floor(point.pressure * 8);
+    data[i*3+1] = Math.floor(point.position[0]);
+    data[i*3+2] = Math.floor(point.position[1]);
+  });
+
+  return {
+    color: stroke.color,
+    data
+  };
 }
 
 class Layer {
@@ -158,7 +196,7 @@ class Intermediate {
 }
 
 const TILE_SIZE: vec2 = [ 768, 768 ];
-const TILE_MARGIN = 1;
+const TILE_MARGIN = 0.5;
 
 class Tile {
   layer = new Layer(style.tile, TILE_SIZE);
@@ -221,14 +259,18 @@ class TileManager {
   protected updateTiles() {
     const margin = TILE_MARGIN;
 
-    const min = Vec2.add(
-      Vec2.floor(Vec2.div(this.scroll, TILE_SIZE)),
-      [ -margin, -margin ]
+    const min = Vec2.floor(
+      Vec2.add(
+        Vec2.div(this.scroll, TILE_SIZE),
+        [ -margin, -margin ]
+      )
     );
 
-    const max = Vec2.add(
-      Vec2.floor(Vec2.div(Vec2.add(this.scroll, [ window.innerWidth, window.innerHeight ]), TILE_SIZE)),
-      [ +margin, +margin ]
+    const max = Vec2.floor(
+      Vec2.add(
+        Vec2.div(Vec2.add(this.scroll, [ window.innerWidth, window.innerHeight ]), TILE_SIZE),
+        [ +margin, +margin ]
+      )
     );
     
     const bounds: bounds2 = [ min, max ];
@@ -359,10 +401,10 @@ class Application {
       this.intermediates.delete(id);
     });
 
-    this.socket.on('strokes', (tileId: TileId, strokes: Stroke[]) => {
+    this.socket.on('strokes', (tileId: TileId, strokes: CompressedStroke[]) => {
       console.log(tileId, strokes.length);
       strokes.forEach(stroke =>
-        this.tiles.drawStroke(tileId, stroke)
+        this.tiles.drawStroke(tileId, inflateStroke(stroke))
       );
     });
   }
@@ -433,7 +475,7 @@ class Application {
           )
         });
 
-        this.socket.emit('stroke', this.intermediateId, tileId(pos), strokeAdj);
+        this.socket.emit('stroke', this.intermediateId, tileId(pos), deflateStroke(strokeAdj));
       });
 
       ++this.intermediateId;
