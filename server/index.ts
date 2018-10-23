@@ -71,7 +71,6 @@ class Tile {
       return;
     
     try {
-      console.log('saving ', this.path);
       fs.writeFileSync(this.path, JSON.stringify(this.strokes));
       this.isDirty = false;
     } catch (e) {
