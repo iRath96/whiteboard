@@ -1,6 +1,7 @@
 # Description
 
-A very tiny whiteboard app based on [socket.io](https://socket.io) and [Express](https://expressjs.com).
+A very tiny whiteboard app based on [socket.io](https://socket.io) and [Express](https://expressjs.com).  
+Check out the [demo](https://zeichnen.ist.besonders.cool/)!
 
 * Supports pen pressure in browsers with _pointer events_
 * Interpolates and smoothens strokes
