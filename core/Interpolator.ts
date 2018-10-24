@@ -102,10 +102,12 @@ export class Interpolator extends Pipe {
   protected getTangent(i: number, value: Getter<number>) {
     const n = this.points.length;
 
-    const left  = i <= 0 ? 0 : i - 1;
-    const right = i >= n - 1 ? n - 1 : i + 1;
+    if (i === 0 || i === n - 1) {
+      // clamped boundary condition
+      return 0;
+    }
 
-    return (1 - this.c) * (value(this.points[right]) - value(this.points[left])) / (right - left);
+    return (1 - this.c) * (value(this.points[i+1]) - value(this.points[i-1])) / 2;
   }
 
   protected interpolateValue(t: number, p0: number, m0: number, p1: number, m1: number) {
