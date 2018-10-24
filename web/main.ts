@@ -251,6 +251,12 @@ class TileManager {
   constructor(
     protected app: Application
   ) {
+    if (window.location.hash) {
+      // read initial scroll position from hash fragment
+      const fragment = window.location.hash.replace(/^#/, '');
+      this.scroll = fragment.split('/').map(Number) as any;
+    }
+
     this.updateTiles();
   }
 
@@ -260,6 +266,9 @@ class TileManager {
 
   setScroll(newScroll: vec2) {
     this.scroll = newScroll;
+    window.location.replace(`#${this.scroll.join('/')}`);
+    //window.location.hash = this.scroll.join('/');
+
     this.updateTiles();
   }
 
@@ -363,15 +372,19 @@ class Application {
     if (this.tiles)
       return;
     
-    this.tiles = new TileManager(this);
-
-    const scroll = (x, y) => {
-      this.tiles.scrollRelative([ x, y ]);
+    const updateOptionsScroll = () => {
       [ this.options.scrollX, this.options.scrollY ] = this.tiles.getScroll();
-
       this.vpControls.forEach(vp =>
         vp.updateDisplay()
       );
+    };
+
+    this.tiles = new TileManager(this);
+    updateOptionsScroll(); // TileManager may have shifted because of hash fragment
+
+    const scroll = (x, y) => {
+      this.tiles.scrollRelative([ x, y ]);
+      updateOptionsScroll();
     }
 
     document.addEventListener('keydown', e => {
