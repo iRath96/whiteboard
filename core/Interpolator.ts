@@ -96,8 +96,8 @@ abstract class Pipe {
 export class Interpolator extends Pipe {
   public c = 0.0;
   public quality = 4.0;
-  public bias = 1e-3;
-  public pressureWeight = 10.0;
+  public bias = 1e-2;
+  public pressureWeight = 8.0;
 
   protected getTangent(i: number, value: Getter<number>) {
     const n = this.points.length;
@@ -136,32 +136,28 @@ export class Interpolator extends Pipe {
     const right = left + 1;
 
     for (let t = 0; t < 1.0;) {
-      const interp = (value: Getter<number>) => {
+      const getArgs = (value: Getter<number>): [number,number,number,number] => {
         const m0 = this.getTangent(left, value);
         const m1 = this.getTangent(right, value);
         const p0 = value(this.points[left]);
         const p1 = value(this.points[right]);
 
-        return this.interpolateValue(t, p0, m0, p1, m1);
+        return [ p0, m0, p1, m1 ];
       };
 
-      const diff2 = (value: Getter<number>) => {
-        const m0 = this.getTangent(left, value);
-        const m1 = this.getTangent(right, value);
-        const p0 = value(this.points[left]);
-        const p1 = value(this.points[right]);
+      const interp = (value: Getter<number>) => this.interpolateValue(t, ...getArgs(value));
+      const diff1 = (value: Getter<number>) => this.interpolateDiff(t, ...getArgs(value));
+      const diff2 = (value: Getter<number>) => this.interpolateDiff2(t, ...getArgs(value));
 
-        return this.interpolateDiff2(t, p0, m0, p1, m1);
-      };
-
+      const arg = Math.abs(Math.pow(diff1(p => p.pressure), 2) / (interp(p => p.pressure) + 32));
       result.push(interpolate(interp));
-
+      
       let speed = hypot(
         diff2(p => p.position[0]),
         diff2(p => p.position[1])
       );
 
-      speed += this.pressureWeight * Math.abs(diff2(p => p.pressure));
+      speed += this.pressureWeight * arg;
 
       t += this.quality / (speed + this.bias) + this.bias;
     }

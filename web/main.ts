@@ -4,7 +4,10 @@ import { Point, Interpolator, Reducer, vec2, Vec2, Bounds2, bounds2, Smoothener 
 import * as dat from 'dat.gui';
 import * as io from 'socket.io-client';
 
-const Pressure = require('pressure');
+const TILE_SIZE: vec2 = [ 768, 768 ];
+const TILE_MARGIN = 0.5;
+const STROKE_QUALITY = 2; // higher numbers mean less quality
+const DEBUG_STROKES = false;
 
 interface CompressedStroke {
   color: string;
@@ -99,7 +102,7 @@ class Layer {
       this.canvas.offsetHeight
     ];
 
-    const scale = 2; // @todo
+    const scale = window.devicePixelRatio || 1;
 
     this.canvas.width = sizeFQ[0] * scale;
     this.canvas.height = sizeFQ[1] * scale;
@@ -136,27 +139,29 @@ class Layer {
       lastPoint = point;
     });
 
-    /*
-    points.forEach(point => {
-      const p = point.position;
+    if (DEBUG_STROKES) {
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeStyle = 'red';
+      points.forEach(point => {
+        const p = point.position;
 
-      this.ctx.beginPath();
+        this.ctx.beginPath();
 
-      this.ctx.moveTo(p[0] - 2, p[1] - 2);
-      this.ctx.lineTo(p[0] + 2, p[1] + 2);
-      this.ctx.moveTo(p[0] + 2, p[1] - 2);
-      this.ctx.lineTo(p[0] - 2, p[1] + 2);
-      this.ctx.stroke();
+        this.ctx.moveTo(p[0] - 2, p[1] - 2);
+        this.ctx.lineTo(p[0] + 2, p[1] + 2);
+        this.ctx.moveTo(p[0] + 2, p[1] - 2);
+        this.ctx.lineTo(p[0] - 2, p[1] + 2);
+        this.ctx.stroke();
 
-      this.ctx.closePath();
-    });
-    */
+        this.ctx.closePath();
+      });
+    }
   };
 
   drawStroke(stroke: Stroke) {
     const interpolator = new Interpolator();
     interpolator.c = 0.0;
-    interpolator.quality = 2; // @todo not elegant, not DRY with Intermediate
+    interpolator.quality = STROKE_QUALITY; // @todo not elegant, not DRY with Intermediate
 
     this.drawPoints(interpolator.process(stroke.points), stroke.color);
   }
@@ -203,9 +208,6 @@ class Intermediate {
 
   // @todo on resize?
 }
-
-const TILE_SIZE: vec2 = [ 768, 768 ];
-const TILE_MARGIN = 0.5;
 
 class Tile {
   layer = new Layer(style.tile, TILE_SIZE);
@@ -348,8 +350,6 @@ class Application {
     scrollY: 0
   };
 
-  pressure = 1.0;
-
   intermediates = new Map<number, Intermediate>();
   intermediateId = 0;
 
@@ -427,25 +427,21 @@ class Application {
     this.intercept.id = style.intercept;
     document.body.appendChild(this.intercept);
 
-    Pressure.set(this.intercept, {
-      change: (force: number) => {
-        this.pressure = force;
-      }
-    }, {
-      polyfill: false
-    });
-
-    const isActive = () =>
-      this.intermediates.has(this.intermediateId)
-    ;
-
-    const intermediate = () =>
-      this.intermediates.get(this.intermediateId)!
-    ;
+    const isActive = () => this.intermediates.has(this.intermediateId);
+    const intermediate = () => this.intermediates.get(this.intermediateId)!;
 
     let lastPosition: vec2;
 
-    const addPoint = (e: MouseEvent, first = false) => {
+    interface EventWithPressure {
+      preventDefault(): void;
+      clientX: number;
+      clientY: number;
+      pressure: number;
+    }
+
+    const addPoint = (e: EventWithPressure, first = false) => {
+      e.preventDefault();
+
       const position: vec2 = [
         e.clientX,
         e.clientY
@@ -457,7 +453,7 @@ class Application {
       let pressure: number;
       switch (this.options.pressureMode) {
         case 'none': pressure = 1.0; break;
-        case 'default': pressure = this.pressure; break;
+        case 'default': pressure = e.pressure; break;
         case 'simulate': {
           const speed = Vec2.distance(position, lastPosition);
           lastPosition = position;
@@ -480,7 +476,9 @@ class Application {
       intermediate().drawPoints(intermediate().interpolator.pipeMultiple(reduced));
     };
 
-    const flush = () => {
+    const endStroke = (e: Event) => {
+      e.preventDefault();
+
       if (!isActive())
         return;
       
@@ -524,7 +522,7 @@ class Application {
       ++this.intermediateId;
     };
 
-    this.intercept.addEventListener('mousedown', e => {
+    const startStroke = (e: EventWithPressure) => {
       const int = new Intermediate();
       this.intermediates.set(this.intermediateId, int);
       
@@ -562,20 +560,41 @@ class Application {
 
       int.interpolator = new Interpolator();
       int.interpolator.c = 0.0;
-      int.interpolator.quality = 2;
+      int.interpolator.quality = STROKE_QUALITY;
 
       addPoint(e, true);
-    });
+    };
 
-    this.intercept.addEventListener('mousemove', e => {
+    const moveStroke = (e: EventWithPressure) => {
       if (!isActive())
         return;
       
       addPoint(e);
-    });
+    };
 
-    this.intercept.addEventListener('mouseup', flush);
-    this.intercept.addEventListener('mouseleave', flush);
+    if ('PointerEvent' in window) {
+      this.intercept.addEventListener('pointerdown', startStroke);
+      this.intercept.addEventListener('pointermove', moveStroke);
+      this.intercept.addEventListener('pointerup',   endStroke);
+    } else {
+      // fallback for Safari (*yuck*)
+
+      const wrap = (fn: (e: EventWithPressure) => void): ((e: MouseEvent) => void) =>
+        e => fn({
+          preventDefault: () => e.preventDefault(),
+          clientX: e.clientX,
+          clientY: e.clientY,
+          pressure: 1.0
+        })
+      ;
+
+      this.intercept.addEventListener('mousedown', wrap(startStroke));
+      this.intercept.addEventListener('mousemove', wrap(moveStroke));
+      this.intercept.addEventListener('mouseup',   endStroke);
+    }
+
+    this.intercept.addEventListener('mouseleave', endStroke);
+    this.intercept.addEventListener('touchstart', e => e.preventDefault());
   }
 }
 
