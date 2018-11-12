@@ -368,6 +368,21 @@ class Application {
     this.setupIntercept();
   }
 
+  get isActive() {
+    return this.intermediates.has(this.intermediateId);
+  }
+
+  get intermediate() {
+    return this.intermediates.get(this.intermediateId)!;
+  }
+
+  protected abortIntermediates() {
+    for (let i of this.intermediates.values())
+      i.destroy();
+    
+    this.intermediates.clear();
+  }
+
   protected setupTileManager() {
     if (this.tiles)
       return;
@@ -385,7 +400,7 @@ class Application {
     const scroll = (x, y) => {
       this.tiles.scrollRelative([ x, y ]);
       updateOptionsScroll();
-    }
+    };
 
     document.addEventListener('keydown', e => {
       switch (e.keyCode) {
@@ -395,6 +410,53 @@ class Application {
         case KEY_RIGHT: scroll(+300, 0); break;
       }
     });
+
+    {
+      // scrolling on desktops
+
+      document.addEventListener('wheel', e => {
+        e.preventDefault();
+        scroll(e.deltaX, e.deltaY);
+      });
+    }
+
+    {
+      // scrolling on mobile devices
+      
+      let [ scrollX, scrollY ] = [ 0, 0 ];
+      let scrolling = false;
+      this.intercept.addEventListener('touchstart', e => {
+        e.preventDefault();
+        scrolling = false;
+      });
+
+      this.intercept.addEventListener('touchmove', e => {
+        if (e.touches.length > 1) {
+          e.preventDefault();
+
+          if (this.isActive)
+            this.abortIntermediates();
+
+          const [ x, y ] = Array.from(e.touches).reduce(([ x, y ], e) => [ x + e.clientX, y + e.clientY ], [ 0, 0 ]);
+          const deltaX = Math.floor(x / e.touches.length - scrollX);
+          const deltaY = Math.floor(y / e.touches.length - scrollY);
+
+          if (scrolling)
+            scroll(-deltaX, -deltaY);
+          else
+            scrolling = true;
+
+          scrollX += deltaX;
+          scrollY += deltaY;
+        }
+      });
+
+      this.intercept.addEventListener('touchend', e => {
+        e.preventDefault();
+
+        // @todo momentum
+      });
+    }
   }
 
   protected setupGUI() {
@@ -440,9 +502,6 @@ class Application {
     this.intercept.id = style.intercept;
     document.body.appendChild(this.intercept);
 
-    const isActive = () => this.intermediates.has(this.intermediateId);
-    const intermediate = () => this.intermediates.get(this.intermediateId)!;
-
     let lastPosition: vec2;
 
     interface EventWithPressure {
@@ -477,29 +536,29 @@ class Application {
       }
 
       const point: Point = {
-        time: (new Date().getTime() - intermediate().startTime.getTime()) / 1000,
+        time: (new Date().getTime() - this.intermediate.startTime.getTime()) / 1000,
         pressure: pressure * this.options.size,
         position
       };
       
-      const smoothened = intermediate().smoothener.pipe(point);
-      const reduced = intermediate().reducer.pipeMultiple(smoothened).map(compressPoint)
+      const smoothened = this.intermediate.smoothener.pipe(point);
+      const reduced = this.intermediate.reducer.pipeMultiple(smoothened).map(compressPoint)
 
-      intermediate().stroke.points = [ ...intermediate().stroke.points, ...reduced ];
-      intermediate().drawPoints(intermediate().interpolator.pipeMultiple(reduced));
+      this.intermediate.stroke.points = [ ...this.intermediate.stroke.points, ...reduced ];
+      this.intermediate.drawPoints(this.intermediate.interpolator.pipeMultiple(reduced));
     };
 
     const endStroke = (e: Event) => {
       e.preventDefault();
 
-      if (!isActive())
+      if (!this.isActive)
         return;
       
-      intermediate().drawPoints(
+      this.intermediate.drawPoints(
         // @todo this is pretty ugly.
-        intermediate().interpolator.process(
-          intermediate().reducer.process(
-            intermediate().smoothener.flush()
+        this.intermediate.interpolator.process(
+          this.intermediate.reducer.process(
+            this.intermediate.smoothener.flush()
           )
         )
       );
@@ -507,14 +566,14 @@ class Application {
       const tiles: vec2[] = [];
       const bounds = Bounds2.floor(
         Bounds2.div(
-          Bounds2.add(intermediate().bounds, this.tiles.getScroll()),
+          Bounds2.add(this.intermediate.bounds, this.tiles.getScroll()),
           TILE_SIZE
         )
       );
 
       Bounds2.forEach(bounds, pos => tiles.push(pos));
 
-      const stroke = intermediate().stroke;
+      const stroke = this.intermediate.stroke;
       tiles.forEach(pos => {
         // @todo clip stroke to tile
 
@@ -531,11 +590,11 @@ class Application {
 
         this.socket.emit('stroke', this.intermediateId, tileId(pos), deflateStroke(strokeAdj));
       });
-
-      ++this.intermediateId;
     };
 
     const startStroke = (e: EventWithPressure) => {
+      ++this.intermediateId;
+
       const int = new Intermediate();
       this.intermediates.set(this.intermediateId, int);
       
@@ -579,7 +638,7 @@ class Application {
     };
 
     const moveStroke = (e: EventWithPressure) => {
-      if (!isActive())
+      if (!this.isActive)
         return;
       
       addPoint(e);
@@ -607,7 +666,6 @@ class Application {
     }
 
     this.intercept.addEventListener('mouseleave', endStroke);
-    this.intercept.addEventListener('touchstart', e => e.preventDefault());
   }
 }
 

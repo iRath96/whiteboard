@@ -11,7 +11,6 @@ body {
 
 canvas.tile {
   position: absolute;
-  transition: all 1s ease;
 }
 
 canvas.intermediate, #intercept {
