@@ -408,7 +408,11 @@ class Application {
         case KEY_DOWN:  scroll(0, +300); break;
         case KEY_LEFT:  scroll(-300, 0); break;
         case KEY_RIGHT: scroll(+300, 0); break;
+        default:
+          return;
       }
+
+      e.preventDefault();
     });
 
     {
