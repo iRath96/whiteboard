@@ -95,9 +95,11 @@ abstract class Pipe {
 
 export class Interpolator extends Pipe {
   public c = 0.0;
-  public quality = 4.0;
-  public bias = 1e-2;
-  public pressureWeight = 8.0;
+  public quality = 1.0;
+  public pressureWeight = 20.0;
+  public t0 = 0.001; // minimum timestep
+  public t1 = 0.400; // maximum timestep
+  public tX = 0.150; // first milestone
 
   protected getTangent(i: number, value: Getter<number>) {
     const n = this.points.length;
@@ -136,6 +138,7 @@ export class Interpolator extends Pipe {
 
     const left = this.points.length - 3;
     const right = left + 1;
+    const dist = Vec2.distance(this.points[left].position, this.points[right].position);
 
     for (let t = 0; t < 1.0;) {
       const getArgs = (value: Getter<number>): [number,number,number,number] => {
@@ -154,14 +157,22 @@ export class Interpolator extends Pipe {
       const arg = Math.abs(Math.pow(diff1(p => p.pressure), 2) / (interp(p => p.pressure) + 32));
       result.push(interpolate(interp));
       
-      let speed = hypot(
-        diff2(p => p.position[0]),
-        diff2(p => p.position[1])
-      );
+      const dx = diff1(p => p.position[0]);
+      const dy = diff1(p => p.position[1]);
+      const hyp = hypot(dx, dy);
+
+      let speed = Math.abs(
+        diff2(p => p.position[0]) * dy -
+        diff2(p => p.position[1]) * dx
+      ) / (hyp + 1e-8);
+
+      //result[result.length-1].pressure = speed / 20;
 
       speed += this.pressureWeight * arg;
 
-      t += this.quality / (speed + this.bias) + this.bias;
+      const wantedPixels = this.quality * dist / (speed + 1e-5);
+      
+      t += Math.min(Math.max(wantedPixels / hyp, this.t0), t === 0 ? this.tX : this.t1);
     }
     
     return result;
