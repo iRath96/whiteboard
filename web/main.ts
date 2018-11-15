@@ -396,6 +396,10 @@ class Application {
 
     // load settings
     this.updateRecentStylePanel();
+
+    // load recent style
+    if (this.storage.recentStyles.length > 0)
+      this.strokeSettings = this.storage.recentStyles[0];
   }
 
   protected saveStorage() {
