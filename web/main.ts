@@ -123,7 +123,7 @@ class Layer {
     let lastPoint = previous ? previous : points[0];
     points.forEach(point => {
       this.ctx.beginPath();
-      this.ctx.lineWidth = Math.max(point.pressure, 1);
+      this.ctx.lineWidth = Math.max(point.pressure, 0.1);
       this.ctx.strokeStyle = color;
       this.ctx.lineCap = 'round';
 
