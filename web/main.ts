@@ -340,6 +340,22 @@ class TileManager {
 type PressureMode = 'none' | 'default' | 'simulate';
 type SmoothingMode = 'off' | 'gentle' | 'strong';
 
+interface StrokeSettings {
+  size: number;
+  color: string;
+
+  pressureMode: PressureMode;
+  smoothingMode: SmoothingMode;
+}
+
+interface WhiteboardStorage {
+  recentStyles: StrokeSettings[];
+}
+
+const DEFAULT_STORAGE: WhiteboardStorage = {
+  recentStyles: []
+};
+
 class Application {
   tiles: TileManager;
   intercept = document.createElement('div');
@@ -363,20 +379,114 @@ class Application {
   intermediates = new Map<number, Intermediate>();
   intermediateId = 0;
 
+  storage: WhiteboardStorage;
+
   constructor() {
     this.setupGUI();
     this.setupSocket();
     this.setupIntercept();
+    this.setupStorage();
   }
 
+  protected setupStorage() {
+    let data = JSON.parse(localStorage.getItem('whiteboard') || '{}');
+    
+    // extend with potentially newly implemented settings
+    this.storage = Object.assign({}, DEFAULT_STORAGE, data);
+
+    // load settings
+    this.updateRecentStylePanel();
+  }
+
+  protected saveStorage() {
+    localStorage.setItem('whiteboard', JSON.stringify(this.storage));
+  }
+
+  protected addRecentStyle(settings: StrokeSettings) {
+    const serialize = (ss: StrokeSettings) =>
+      [ ss.color, ss.size, ss.pressureMode, ss.smoothingMode ].join('/')
+    ;
+
+    const newSerialized = serialize(settings);
+    this.storage.recentStyles = this.storage.recentStyles.filter(ss =>
+      serialize(ss) !== newSerialized
+    );
+
+    // store the most recent 16 stroke styles
+    this.storage.recentStyles.unshift(settings);
+    this.storage.recentStyles = this.storage.recentStyles.slice(0, 16);
+
+    this.saveStorage();
+    this.updateRecentStylePanel();
+  }
+
+  protected updateRecentStylePanel() {
+    let e = document.getElementById(style.recentStyles);
+    if (!e) {
+      e = document.createElement('div');
+      e.id = style.recentStyles;
+
+      this.gui.domElement.appendChild(e);
+    }
+
+    e.innerHTML = ''; // remove all children
+
+    for (const ss of this.storage.recentStyles) {
+      // not very efficient…
+
+      const preview = document.createElement('div');
+      preview.classList.add(style.preview);
+      preview.addEventListener('click', e => {
+        this.strokeSettings = ss;
+      });
+
+      const brush = document.createElement('div');
+
+      brush.style.width =
+      brush.style.height =
+      brush.style.borderRadius = Math.floor(Math.sqrt(4 * ss.size + 16)) + 'px';
+      brush.style.backgroundColor = ss.color;
+      brush.style.transform = 'translate(-50%, -50%) translate(10px, 10px)';
+
+      preview.appendChild(brush);
+
+      e.appendChild(preview);
+    }
+  }
+
+  /**
+   * Returns all settings that define how a stroke is drawn.
+   */
+  get strokeSettings(): StrokeSettings {
+    const { size, color, pressureMode, smoothingMode } = this.options;
+    return { size, color, pressureMode, smoothingMode };
+  }
+
+  /**
+   * Updates the all settings that define how a stroke is drawn.
+   */
+  set strokeSettings(settings: StrokeSettings) {
+    Object.assign(this.options, settings);
+    this.gui.updateDisplay();
+  }
+
+  /**
+   * Returns whether a stroke is currently drawn.
+   */
   get isActive() {
     return this.intermediates.has(this.intermediateId);
   }
 
+  /**
+   * Returns the stroke that is currently drawn.
+   */
   get intermediate() {
     return this.intermediates.get(this.intermediateId)!;
   }
 
+  /**
+   * Aborts the stroke that is currently drawn.
+   */
   protected abortIntermediates() {
     for (let i of this.intermediates.values())
       i.destroy();
@@ -603,6 +713,8 @@ class Application {
 
     const startStroke = (e: EventWithPressure) => {
       ++this.intermediateId;
+
+      this.addRecentStyle(this.strokeSettings);
 
       const int = new Intermediate();
       this.intermediates.set(this.intermediateId, int);

@@ -29,3 +29,20 @@ canvas.intermediate {
   right: 0;
   bottom: 0;
 }
+
+#recentStyles {
+  margin-top: 20px;
+  background-color: #303030;
+}
+
+#recentStyles .preview {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  margin: 3px;
+}
+
+.preview div {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
