@@ -239,10 +239,11 @@ function tileId(position: vec2): TileId {
   return position.join('/');
 }
 
-const KEY_UP = 38;
-const KEY_DOWN = 40;
-const KEY_LEFT = 37;
-const KEY_RIGHT= 39;
+const KEY_UP    = 38;
+const KEY_DOWN  = 40;
+const KEY_LEFT  = 37;
+const KEY_RIGHT = 39;
+const KEY_ESC   = 27;
 
 class TileManager {
   protected scroll: vec2 = [ 0, 0 ];
@@ -408,6 +409,10 @@ class Application {
         case KEY_DOWN:  scroll(0, +300); break;
         case KEY_LEFT:  scroll(-300, 0); break;
         case KEY_RIGHT: scroll(+300, 0); break;
+        case KEY_ESC:
+          this.abortIntermediates();
+          break;
+        
         default:
           return;
       }
