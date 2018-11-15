@@ -256,9 +256,19 @@ class TileManager {
       // read initial scroll position from hash fragment
       const fragment = window.location.hash.replace(/^#/, '');
       this.scroll = fragment.split('/').map(Number) as any;
-    }
 
-    this.updateTiles();
+      this.updateTiles();
+    } else {
+      // choose a random starting point
+      this.setRandomScroll();
+    }
+  }
+
+  setRandomScroll(distance = 100) {
+    this.setScroll([
+      Math.floor(Math.random() * 40 - 20) * distance,
+      Math.floor(Math.random() * 40 - 20) * distance
+    ]);
   }
 
   scrollRelative(offset: vec2) {
@@ -268,7 +278,6 @@ class TileManager {
   setScroll(newScroll: vec2) {
     this.scroll = newScroll;
     window.location.replace(`#${this.scroll.join('/')}`);
-    //window.location.hash = this.scroll.join('/');
 
     this.updateTiles();
   }
@@ -373,7 +382,11 @@ class Application {
     smoothingMode: 'gentle' as SmoothingMode,
 
     scrollX: 0,
-    scrollY: 0
+    scrollY: 0,
+    randomScroll: () => {
+      this.tiles.setRandomScroll(Math.random() > 0.5 ? 5000 : 100);
+      this.updateOptionsScroll();
+    }
   };
 
   intermediates = new Map<number, Intermediate>();
@@ -498,23 +511,23 @@ class Application {
     this.intermediates.clear();
   }
 
+  protected updateOptionsScroll() {
+    [ this.options.scrollX, this.options.scrollY ] = this.tiles.getScroll();
+    this.vpControls.forEach(vp =>
+      vp.updateDisplay()
+    );
+  };
+
   protected setupTileManager() {
     if (this.tiles)
       return;
-    
-    const updateOptionsScroll = () => {
-      [ this.options.scrollX, this.options.scrollY ] = this.tiles.getScroll();
-      this.vpControls.forEach(vp =>
-        vp.updateDisplay()
-      );
-    };
 
     this.tiles = new TileManager(this);
-    updateOptionsScroll(); // TileManager may have shifted because of hash fragment
+    this.updateOptionsScroll(); // TileManager may have shifted because of hash fragment
 
     const scroll = (x, y) => {
       this.tiles.scrollRelative([ x, y ]);
-      updateOptionsScroll();
+      this.updateOptionsScroll();
     };
 
     document.addEventListener('keydown', e => {
@@ -597,6 +610,7 @@ class Application {
     const viewport = this.gui.addFolder('viewport');
     this.vpControls.push(viewport.add(this.options, 'scrollX').onChange(scroll).step(1).name('x'));
     this.vpControls.push(viewport.add(this.options, 'scrollY').onChange(scroll).step(1).name('y'));
+    viewport.add(this.options, 'randomScroll').name('Random');
     viewport.open();
 
     this.gui.domElement.parentElement.style.zIndex = '10000';
