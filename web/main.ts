@@ -359,10 +359,12 @@ interface StrokeSettings {
 
 interface WhiteboardStorage {
   recentStyles: StrokeSettings[];
+  ipadMode: boolean;
 }
 
 const DEFAULT_STORAGE: WhiteboardStorage = {
-  recentStyles: []
+  recentStyles: [],
+  ipadMode: false
 };
 
 class Application {
@@ -383,6 +385,7 @@ class Application {
 
     scrollX: 0,
     scrollY: 0,
+
     randomScroll: () => {
       this.tiles.setRandomScroll(Math.random() > 0.5 ? 5000 : 100);
       this.updateOptionsScroll();
@@ -395,10 +398,10 @@ class Application {
   storage: WhiteboardStorage;
 
   constructor() {
+    this.setupStorage();
     this.setupGUI();
     this.setupSocket();
     this.setupIntercept();
-    this.setupStorage();
   }
 
   protected setupStorage() {
@@ -567,7 +570,16 @@ class Application {
       });
 
       this.intercept.addEventListener('touchmove', e => {
-        if (e.touches.length > 1) {
+        if (
+          // never scroll when using a stylus
+          e.touches[0].touchType !== 'stylus'
+          && (
+            // scroll if more than one touch...
+            e.touches.length > 1
+            // ...or single touch in case of iPad mode
+            || this.storage.ipadMode
+          )
+         ) {
           e.preventDefault();
 
           if (this.isActive)
@@ -611,6 +623,7 @@ class Application {
     this.vpControls.push(viewport.add(this.options, 'scrollX').onChange(scroll).step(1).name('x'));
     this.vpControls.push(viewport.add(this.options, 'scrollY').onChange(scroll).step(1).name('y'));
     viewport.add(this.options, 'randomScroll').name('Random');
+    viewport.add(this.storage, 'ipadMode').name('Touch Scrolling').onChange(() => this.saveStorage());
     viewport.open();
 
     this.gui.domElement.parentElement.style.zIndex = '10000';
