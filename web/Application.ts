@@ -14,7 +14,7 @@ import {
   compressPoint
 } from './utils/strokes';
 import {
-  TILE_SIZE, STROKE_QUALITY,
+  TILE_SIZE, STROKE_QUALITY, DEBUG_STROKES,
   KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_ESC
 } from './utils/constants';
 import { Smoothener, Reducer, Interpolator } from '@core/pipes';
@@ -407,23 +407,76 @@ export default class Application {
 
       Bounds2.forEach(bounds, pos => tiles.push(pos));
 
+      let overhead = 0;
       const stroke = this.intermediate.stroke;
       tiles.forEach(pos => {
-        // @todo clip stroke to tile
-
-        const strokeAdj: Stroke = Object.assign({}, stroke, {
-          points: stroke.points.map(point =>
-            Object.assign({}, point, {
-              position: Vec2.sub(
-                Vec2.add(point.position, this.tiles.getScroll()),
-                Vec2.mul(pos, TILE_SIZE)
-              )
-            })
+        const isPointInTile = (point: Point) => {
+          const pos = point.position;
+          const r = point.pressure / 2;
+          return (
+            (pos[0] > -r) && (pos[0]-TILE_SIZE[0] < +r) &&
+            (pos[1] > -r) && (pos[1]-TILE_SIZE[1] < +r)
           )
-        });
+        };
 
-        this.socket.emit('stroke', this.intermediateId, tileId(pos), deflateStroke(strokeAdj));
+        const clipStrokeToTile = (points: Point[]) => {
+          // old behavior, sends way more points than necessary
+          //return [ points ];
+
+          const interp = new Interpolator();
+          const important = points.map(_ => false);
+
+          for (let i = 0; i <= points.length; ++i) {
+            const output = i === points.length ?
+              interp.flush() :
+              interp.pipe(points[i])
+            ;
+
+            if (output.some(isPointInTile)) {
+              for (let off = 0; off < 4; ++off)
+                // mark the keypoints as important
+                important[i-off] = true;
+            }
+          }
+
+          const segments: Point[][] = [[]];
+          points.forEach((point, index) => {
+            if (important[index])
+              segments[segments.length-1].push(point);
+            else
+              // need to start a new stroke to break this
+              // one up in segments
+              segments.push([]);
+          });
+
+          // don't submit empty segments
+          return segments.filter(segment => segment.length > 0);
+        };
+
+        const segments = clipStrokeToTile(
+          stroke.points
+            .map(point =>
+              // make point relative to tile
+              Object.assign({}, point, {
+                position: Vec2.sub(
+                  Vec2.add(point.position, this.tiles.getScroll()),
+                  Vec2.mul(pos, TILE_SIZE)
+                )
+              })
+            )
+        );
+
+        segments.forEach(points => {
+          const strokeAdj: Stroke = Object.assign({}, stroke, { points });
+          this.socket.emit('stroke', this.intermediateId, tileId(pos), deflateStroke(strokeAdj));
+          if (DEBUG_STROKES)
+            console.log("segment ", points.length);
+          overhead += points.length;
+        });
       });
+
+      if (DEBUG_STROKES)
+        console.log("done ", stroke.points.length, overhead / stroke.points.length);
 
       // get ready for the next stroke
       ++this.intermediateId;
