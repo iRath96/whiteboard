@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as webpack from 'webpack';
 import * as HtmlWebpackPlugin from 'html-webpack-plugin';
 
+const rootDir = path.join(__dirname, '..');
+
 module.exports = {
   mode: 'development',
   entry: [
@@ -16,7 +18,11 @@ module.exports = {
     publicPath: '/'
   },
   resolve: {
-    extensions: ['.js', '.jsx', '.ts', '.tsx']
+    extensions: ['.js', '.jsx', '.ts', '.tsx'],
+    alias: {
+      '@web': path.join(rootDir, 'web'),
+      '@core': path.join(rootDir, 'core')
+    },
   },
   plugins: [
     new HtmlWebpackPlugin({

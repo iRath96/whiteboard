@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "moduleResolution": "node",
-    "target": "es6"
+    "target": "es6",
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": [ "core/*" ]
+    },
   }
 }

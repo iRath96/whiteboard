@@ -131,11 +131,19 @@ sock.on('connection', client => {
     tile.subscribers.delete(client);
   });
 
-  client.on('stroke', (id: string, tileId: TileId, stroke: any) => {
-    client.emit('accept', id);
+  client.on('stroke', (id: string, tileId: TileId, strokeRaw: any) => {
+    // verify that the stroke is well formatted
+    if (typeof strokeRaw !== 'object') return;
+    if (typeof strokeRaw.color !== 'string') return;
+    if (!Array.isArray(strokeRaw.data)) return;
+    if (!strokeRaw.data.every(e => typeof e === 'number')) return;
+
+    const stroke = { color: strokeRaw.color, data: strokeRaw.data };
 
     const tile = getTile(tileId);
     tile.addStroke(stroke);
+
+    client.emit('accept', id);
   });
 
   client.on('disconnect', () => {
