@@ -20,10 +20,10 @@ function interpolate(interp: (value: Getter<number>) => number): Point {
 export default class Interpolator extends Pipe {
   public c = 0.0; // 0->quadratic, 1->linear interpolation
   public quality = 1.0;
-  public pressureWeight = 60.0;
-  public t0 = 0.001; // minimum timestep
+  public pressureWeight = 30.0;
+  public t0 = 0.070; // minimum timestep
   public t1 = 0.400; // maximum timestep
-  public tX = 0.150; // first milestone
+  public tX = 0.200; // first timestep (no differentials available at that point)
 
   protected getTangent(i: number, value: Getter<number>) {
     const n = this.points.length;

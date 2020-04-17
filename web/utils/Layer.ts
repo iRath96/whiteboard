@@ -112,6 +112,11 @@ export default class Layer {
     interpolator.c = 0.0;
     interpolator.quality = STROKE_QUALITY; // @todo not elegant, not DRY with Intermediate
 
+    // if you want to sacrifice quality a bit more
+    //const reducer = new Reducer();
+    //reducer.d = 10;
+    //stroke.points = reducer.process(stroke.points);
+
     this.drawPoints(interpolator.process(stroke.points), stroke.color);
   }
 }

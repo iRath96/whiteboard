@@ -9,7 +9,16 @@ import { Point, Vec2 } from '../geometry';
  * slowly), but also helps the interpolator make lines even smoother.
  */
 export default class Reducer extends Pipe {
+  /**
+   * The minimum distance between points.
+   */
   public d = 3.0;
+  /**
+   * Whether to accumulate distances (false), meaning that points
+   * could still have less than 'd' distance if there was some movement
+   * in between, or to enforce the minimum distance (true) no matter what
+   * happened between two points.
+   */
   public hard = false;
 
   protected r = 0.0;
