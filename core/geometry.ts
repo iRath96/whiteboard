@@ -65,7 +65,7 @@ export interface Point {
    */
   time: number;
   /**
-   * The pen pressure of this point in [0, 1].
+   * The diameter of the brush at this point.
    */
   pressure: number;
   /**
