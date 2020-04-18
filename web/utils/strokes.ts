@@ -24,7 +24,13 @@ export function inflateStroke(stroke: CompressedStroke): Stroke {
   for (let i = 0; i < stroke.data.length; i += 3) {
     points.push({
       time: 0,
-      pressure: stroke.data[i+0] / 8,
+      pressure: Math.min(
+        Math.max(
+          stroke.data[i+0] / 8,
+          0
+        ),
+        100
+      ),
       position: [
         stroke.data[i+1],
         stroke.data[i+2]

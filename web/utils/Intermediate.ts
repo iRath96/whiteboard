@@ -44,11 +44,11 @@ export default class Intermediate {
     this.lastPoint = points[points.length - 1];
 
     this.bounds = points.reduce((b, point) => {
-      // @todo immediate operations would be more efficient
+      // @todo immediate vector operations might be more efficient
 
-      const size: vec2 = [ point.pressure, point.pressure ];
-      b = Bounds2.extend(b, Vec2.sub(point.position, size));
-      b = Bounds2.extend(b, Vec2.add(point.position, size));
+      const radius: vec2 = [ point.pressure / 2, point.pressure / 2 ];
+      b = Bounds2.extend(b, Vec2.sub(point.position, radius));
+      b = Bounds2.extend(b, Vec2.add(point.position, radius));
       return b;
     }, this.bounds);
   }
