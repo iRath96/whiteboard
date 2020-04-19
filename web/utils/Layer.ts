@@ -1,7 +1,7 @@
-import { Point, vec2 } from '@core/geometry';
+import { vec2 } from '@core/geometry';
 import { Interpolator } from '@core/pipes';
 import { DEBUG_STROKES, STROKE_QUALITY } from './constants';
-import { Stroke } from './strokes';
+import { Point, Stroke } from '@core/stroke';
 
 
 /**

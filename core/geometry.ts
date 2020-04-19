@@ -57,20 +57,3 @@ export class Bounds2 {
     ];
   }
 }
-
-export interface Point {
-  /**
-   * The creation time of this point in seconds.
-   * A time of zero corresponds to the first point in a stroke.
-   */
-  time: number;
-  /**
-   * The diameter of the brush at this point.
-   */
-  pressure: number;
-  /**
-   * The position of this point in [0, TILE_SIZE]^2.
-   */
-  position: vec2;
-}
-

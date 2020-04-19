@@ -1,7 +1,7 @@
 import { Vec2, vec2, Bounds2, bounds2 } from '@core/geometry';
 import { TileId, Tile, tileId } from './Tile';
 import { TILE_SIZE, TILE_MARGIN } from './constants';
-import { Stroke } from './strokes';
+import { Stroke } from '@core/stroke';
 
 export interface Callbacks {
   subscribe(id: TileId);

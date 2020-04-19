@@ -1,5 +1,6 @@
 import Pipe from './Pipe';
-import { Point, Vec2, hypot } from '../geometry';
+import { Vec2, hypot } from '../geometry';
+import { Point } from '../stroke';
 
 export type Getter<T> = (p: Point) => T;
 function interpolate(interp: (value: Getter<number>) => number): Point {

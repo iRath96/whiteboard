@@ -1,5 +1,6 @@
 import Pipe from './Pipe';
-import { Point, Vec2 } from '../geometry';
+import { Vec2 } from '../geometry';
+import { Point } from '../stroke';
 
 /**
  * This pipeline reduces an incoming stream of points, throwing

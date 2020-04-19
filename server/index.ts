@@ -7,10 +7,15 @@ import * as webpackMiddleware from 'webpack-dev-middleware';
 import * as webpackHotMiddleware from 'webpack-hot-middleware';
 import * as io from 'socket.io';
 
+import { CompressedStroke, StrokesByTile } from '@core/stroke';
+import * as metrics from './metrics';
+
 const config = require('./webpack.config.ts');
+
 
 const isDeveloping = process.env.NODE_ENV !== 'production';
 const port = isDeveloping ? 3000 : Number(process.env.PORT);
+const metricsPort = Number(process.env.METRICS_PORT || 9100);
 
 const app = express();
 const server = new Server(app);
@@ -40,23 +45,51 @@ app.get('*', function response(req, res) {
 // SOCKET STUFF
 //
 
+function countPoints(strokes: CompressedStroke[]) {
+  return strokes.reduce((sum, stroke) => sum + stroke.data.length/3, 0);
+}
+
+type TileId = string;
 class Tile {
-  strokes: any[] = [];
-  subscribers = new Set<io.Socket>();
+  private static loadedTiles = new Map<TileId, Tile>();
 
-  isDirty = false;
+  static get(tileId: TileId) {
+    if (this.loadedTiles.has(tileId))
+      return this.loadedTiles.get(tileId)!;
+    
+    const tile = new Tile(tileId);
+    this.loadedTiles.set(tileId, tile);
+    metrics.numTilesLoaded.inc();
+    return tile;
+  }
+  
+  private static unload(tile: Tile) {
+    this.loadedTiles.delete(tile.tileId);
+    metrics.numTilesLoaded.dec();
+    tile.destroy();
+  }
 
-  constructor(
+  static saveAll() {
+    for (let tile of this.loadedTiles.values())
+      tile.save();
+  }
+
+  private strokes: CompressedStroke[] = [];
+  private subscribers = new Set<io.Socket>();
+
+  private isDirty = false;
+
+  private constructor(
     public tileId: TileId
   ) {
     this.load();
   }
 
-  protected get path() {
+  private get path() {
     return path.join(__dirname, `../data/${this.tileId.replace(/[^0-9\-]/g, '_')}.json`);
   }
 
-  protected load() {
+  private load() {
     this.isDirty = false;
 
     try {
@@ -66,7 +99,7 @@ class Tile {
     }
   }
 
-  save() {
+  private save() {
     if (!this.isDirty)
       return;
     
@@ -78,86 +111,109 @@ class Tile {
     }
   }
 
-  addStroke(stroke: any) {
+  addStrokes(strokes: CompressedStroke[]) {
     this.isDirty = true;
-    this.strokes.push(stroke);
+
+    this.strokes.push(...strokes);
     this.subscribers.forEach(sub =>
-      sub.emit('strokes', this.tileId, [ stroke ])
+      sub.emit('strokes', this.tileId, strokes)
     );
+
+    metrics.numStrokesReceived.labels('segments').inc(strokes.length);
+    metrics.numStrokesReceived.labels('points').inc(countPoints(strokes));
+
+    metrics.numStrokesSent.labels('segments','forwarded').inc(this.subscribers.size);
+    metrics.numStrokesSent.labels('points','forwarded').inc(this.subscribers.size * countPoints(strokes));
   }
 
-  destroy() {
+  private destroy() {
     this.save();
   }
-}
 
-type TileId = string;
-const tiles = new Map<TileId, Tile>();
+  subscribe(client: io.Socket) {
+    this.subscribers.add(client);
+
+    client.emit('strokes', this.tileId, this.strokes);
+    metrics.numStrokesSent.labels('segments','cached').inc(this.strokes.length);
+    metrics.numStrokesSent.labels('points','cached').inc(countPoints(this.strokes));
+    metrics.numSubscriptions.inc();
+  }
+
+  unsubscribe(client: io.Socket) {
+    this.subscribers.delete(client);
+    metrics.numSubscriptions.dec();
+
+    if (this.subscribers.size === 0)
+      Tile.unload(this);
+  }
+}
 
 setInterval(() => {
-  for (let tile of tiles.values())
-    tile.save();
+  // @todo also at process exit
+  Tile.saveAll();
 }, 30 * 1000);
 
-function getTile(tileId: TileId) {
-  if (tiles.has(tileId))
-    return tiles.get(tileId)!;
-  
-  const tile = new Tile(tileId);
-  tiles.set(tileId, tile);
-  return tile;
-}
-
-function unloadTile(tile: Tile) {
-  tiles.delete(tile.tileId);
-  tile.destroy();
-}
-
 sock.on('connection', client => {
+  metrics.numConnections.inc();
+
   const loaded = new Set<Tile>();
 
   client.on('subscribe', (tileId: string) => {
-    const tile = getTile(tileId);
-    tile.subscribers.add(client);
+    const tile = Tile.get(tileId);
+    tile.subscribe(client);
     loaded.add(tile);
-
-    client.emit('strokes', tileId, tile.strokes);
   });
 
   client.on('unsubscribe', (tileId: string) => {
-    const tile = getTile(tileId);
-
+    const tile = Tile.get(tileId);
     loaded.delete(tile);
-    tile.subscribers.delete(client);
+    tile.unsubscribe(client);
   });
 
-  client.on('stroke', (id: string, tileId: TileId, strokeRaw: any) => {
-    // verify that the stroke is well formatted
-    if (typeof strokeRaw !== 'object') return;
-    if (typeof strokeRaw.color !== 'string') return;
-    if (!Array.isArray(strokeRaw.data)) return;
-    if (!strokeRaw.data.every(e => typeof e === 'number')) return;
+  client.on('strokes', (id: string, sbt: StrokesByTile) => {
+    if (!Array.isArray(sbt)) return;
+    metrics.numStrokesReceived.labels('strokes').inc();
 
-    const stroke = { color: strokeRaw.color, data: strokeRaw.data };
+    sbt.forEach(({ tileId, strokes }) => {
+      if (typeof tileId !== 'string') return;
+      if (!Array.isArray(strokes)) return;
 
-    const tile = getTile(tileId);
-    tile.addStroke(stroke);
+      strokes = strokes.reduce((strokes, strokeRaw) => {
+        // verify that the stroke is well formatted
+        if (typeof strokeRaw !== 'object') return strokes;
+        if (typeof strokeRaw.color !== 'string') return strokes;
+        if (!Array.isArray(strokeRaw.data)) return strokes;
+        if (strokeRaw.data.length % 3 !== 0) return strokes;
+        if (!strokeRaw.data.every(e => typeof e === 'number')) return strokes;
+  
+        // accept stroke
+        return [ ...strokes, { color: strokeRaw.color, data: strokeRaw.data } ];
+      }, [] as CompressedStroke[]);
+  
+      const tile = Tile.get(tileId);
+      tile.addStrokes(strokes);
+    });
 
     client.emit('accept', id);
   });
 
   client.on('disconnect', () => {
-    loaded.forEach(tile => {
-      tile.subscribers.delete(client);
-      if (tile.subscribers.size === 0)
-        unloadTile(tile);
-    });
+    metrics.numConnections.dec();
+    loaded.forEach(tile => tile.unsubscribe(client));
   });
 });
 
-server.listen(port, '0.0.0.0', function onStart(err) {
-  if (err) {
+server.listen(port, '0.0.0.0', err => {
+  if (err)
     console.log(err);
-  }
-  console.info('==> 🌎 Listening on port %s. Open up http://0.0.0.0:%s/ in your browser.', port, port);
+  else
+    console.info('==> 🌎 Listening on port %d. Open up http://127.0.0.1:%d/ in your browser.', port, port);
 });
+
+const metricsApp = express();
+metricsApp.get('/metrics', (_, res) => {
+  res.send(metrics.getMetrics());
+});
+
+const metricsServer = new Server(metricsApp);
+metricsServer.listen(metricsPort, '0.0.0.0');

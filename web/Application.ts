@@ -3,13 +3,13 @@ const style = require('./main.css');
 import * as dat from 'dat.gui';
 import * as io from 'socket.io-client';
 
-import { Point, Bounds2, Vec2, vec2 } from '@core/geometry';
+import { Bounds2, Vec2, vec2 } from '@core/geometry';
+import { Point, Stroke, CompressedStroke, StrokesByTile } from '@core/stroke';
 
 import { TileId, tileId } from './utils/Tile';
 import TileManager from './utils/TileManager';
 import Intermediate from './utils/Intermediate';
 import {
-  Stroke, CompressedStroke,
   inflateStroke, deflateStroke,
   compressPoint
 } from './utils/strokes';
@@ -407,9 +407,8 @@ export default class Application {
 
       Bounds2.forEach(bounds, pos => tiles.push(pos));
 
-      let overhead = 0;
       const stroke = this.intermediate.stroke;
-      tiles.forEach(pos => {
+      const strokesByTiles: StrokesByTile = tiles.map(pos => {
         const isPointInTile = (point: Point) => {
           const pos = point.position;
           const r = point.pressure / 2;
@@ -466,17 +465,11 @@ export default class Application {
             )
         );
 
-        segments.forEach(points => {
-          const strokeAdj: Stroke = Object.assign({}, stroke, { points });
-          this.socket.emit('stroke', this.intermediateId, tileId(pos), deflateStroke(strokeAdj));
-          if (DEBUG_STROKES)
-            console.log("segment ", points.length);
-          overhead += points.length;
-        });
+        const deflatedStrokes = segments.map(points => deflateStroke(Object.assign({}, stroke, { points })));
+        return { tileId: tileId(pos), strokes: deflatedStrokes };
       });
 
-      if (DEBUG_STROKES)
-        console.log("done ", stroke.points.length, overhead / stroke.points.length);
+      this.socket.emit('strokes', this.intermediateId, strokesByTiles);
 
       // get ready for the next stroke
       ++this.intermediateId;

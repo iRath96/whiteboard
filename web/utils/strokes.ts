@@ -1,15 +1,6 @@
-import { Point, Vec2 } from '@core/geometry';
+import { Vec2 } from '@core/geometry';
+import { Point, CompressedStroke, Stroke } from '@core/stroke';
 
-
-export interface CompressedStroke {
-  color: string;
-  data: number[];
-}
-
-export interface Stroke {
-  color: string;
-  points: Point[];
-}
 
 export function compressPoint(point: Point) {
   return {

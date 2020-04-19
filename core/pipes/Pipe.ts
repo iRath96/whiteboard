@@ -1,4 +1,4 @@
-import { Point } from '../geometry';
+import { Point } from '../stroke';
 
 /**
  * Represents a processing pipeline for points.

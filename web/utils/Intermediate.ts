@@ -1,8 +1,8 @@
 const style = require('@web/main.css');
 
 import { Reducer, Smoothener, Interpolator } from '@core/pipes';
-import { Point, Vec2, vec2, Bounds2, bounds2 } from '@core/geometry';
-import { Stroke } from './strokes';
+import { Vec2, vec2, Bounds2, bounds2 } from '@core/geometry';
+import { Point, Stroke } from '@core/stroke';
 import Layer from './Layer';
 
 
