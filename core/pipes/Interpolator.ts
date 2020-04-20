@@ -17,14 +17,33 @@ function interpolate(interp: (value: Getter<number>) => number): Point {
 /**
  * This pipeline interpolates a stream of points, i.e.
  * it adds points inbetween them so that the resulting curve is smoother.
+ * Based on cubic hermite splines (https://en.wikipedia.org/wiki/Cubic_Hermite_spline).
+ * @note a different interpolation that respects time information might be more appropriate here,
+ * but we keep this one for historic reasons
  */
 export default class Interpolator extends Pipe {
-  public c = 0.0; // 0->quadratic, 1->linear interpolation
-  public quality = 1.0;
-  public pressureWeight = 30.0;
+  public c = 0.0; // tension parameter (0-> Catmull-Rom spline, 1-> all zero tangents)
+  public quality = 1.0; // larger numbers mean larger step-sizes
+  public pressureWeight = 30.0; // importance of smooth pressure variations
   public t0 = 0.070; // minimum timestep
   public t1 = 0.400; // maximum timestep
   public tX = 0.200; // first timestep (no differentials available at that point)
+
+  /**
+   * The length of the history of points that is considered when
+   * generating a new point.
+   * For this type of interpolation, it is equal to four.
+   * However, at the boundaries (start and end point), only three points
+   * are considered, since tangents are assumed to be zero.
+   * 
+   * 0 -> required for tangent at p0 (optional)
+   * 1 -> p0
+   * 2 -> p1
+   * 3 -> required for tangent at p1 (optional)
+   */
+  public get supportRegion() {
+    return 4;
+  }
 
   protected getTangent(i: number, value: Getter<number>) {
     const n = this.points.length;

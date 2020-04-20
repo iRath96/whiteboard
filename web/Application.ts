@@ -423,6 +423,7 @@ export default class Application {
           //return [ points ];
 
           const interp = new Interpolator();
+          const supportRegion = interp.supportRegion;
           const important = points.map(_ => false);
 
           for (let i = 0; i <= points.length; ++i) {
@@ -432,7 +433,7 @@ export default class Application {
             ;
 
             if (output.some(isPointInTile)) {
-              for (let off = 0; off < 4; ++off)
+              for (let off = 0; off < supportRegion; ++off)
                 // mark the keypoints as important
                 important[i-off] = true;
             }
